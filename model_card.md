@@ -1,180 +1,169 @@
-# Model Card: Music Recommender Simulation
+# Model Card: Vibe Compass 1.0
 
-## Overview
-A rule-based, weighted content-based recommender that ranks songs from a
-fixed catalog against a user's stated taste profile. There is no machine
-learning here — "the model" is a deterministic scoring formula plus a
-sorting/filtering ranking rule.
+## Model Name
 
-## Intended Use
-- **Primary use case:** educational simulation for understanding how
-  content-based recommendation works, as a contrast to collaborative
-  filtering used at scale by platforms like Spotify or YouTube.
-- **Intended users:** students/developers learning recommender system
-  concepts; not intended as a production recommendation engine.
-- **Out of scope:** this is not designed to handle real user behavioral
-  data, real-time interaction signals, large catalogs, or production
-  traffic. It should not be presented to end users as a finished product.
+**Vibe Compass 1.0** — it takes a person's stated "vibe" (genre, mood,
+and a few numeric feelings like energy and acousticness) and points them
+toward the songs in our catalog that match it best.
 
-## How It Works (summary)
-- Input: a song dict (genre, mood, energy, valence, tempo_bpm,
-  danceability, acousticness) and a `user_prefs` dict (target values for
-  each feature).
-- Scoring Rule: `+2.0` points for an exact genre match, `+1.0` for an
-  exact mood match; numeric features (energy, valence, tempo, danceability,
-  acousticness) award points scaled by closeness to the target, up to a
-  per-feature maximum. Total score is an unnormalized sum, capped at 6.0.
-- Ranking Rule: sort all scored songs descending; optionally cap
-  recommendations-per-artist for basic diversity.
-- Output: an ordered list of songs with scores, and a per-feature score
-  breakdown for the top result.
+## Goal / Task
 
-## Training Data / Data Used
-None — there is no training step. The system uses:
-- A small, hand-authored `songs.csv` (19 songs, 17 artists, 16 genres) for
-  demonstration purposes only. Attribute values (energy, valence, etc.)
-  are illustrative, not derived from real audio analysis.
-- User preferences are supplied directly rather than inferred from
-  behavior, which sidesteps the "cold start" and behavioral-signal
-  problems real systems have to solve.
+Given what someone says they like — a favorite genre, a favorite mood,
+and target values for energy, valence, tempo, danceability, and
+acousticness — suggest the top 5 songs from our catalog that best match
+those preferences. It's not trying to predict what a person will click
+next based on other users; it's just comparing stated taste to song
+attributes and ranking the results.
 
-## Metrics
-No formal accuracy metrics are computed — there's no ground truth of
-"correct" recommendations for a simulation like this. Correctness is
-verified instead via unit tests (`tests/test_recommender.py`) that assert
-the scoring math behaves as designed (e.g. closeness beats maximization,
-matches score higher than mismatches, ranking sorts correctly).
+## Data Used
 
-## Evaluation
+- 19 songs, all made up by hand for this project — not real streaming
+  data or real audio analysis.
+- Each song has 7 features: `genre`, `mood`, `energy`, `tempo_bpm`,
+  `valence`, `danceability`, `acousticness`.
+- 16 different genres and 15 different moods are represented, but the
+  catalog isn't evenly spread — `lofi` has 3 songs and `chill` is the
+  most common mood (3 songs), while every other genre/mood has just 1.
+- There's no user history, no likes/skips, and no real listeners behind
+  this data — every "preference" in this project is something we typed
+  in ourselves to test the system.
 
-### Profiles tested
+## Algorithm Summary (plain language, no code)
 
-Five taste profiles were run against the full 19-song catalog (full
-terminal output is in README.md's "Sample Recommendation Output"):
+Every song gets scored against what the user asked for, out of a
+possible 6 points:
 
-1. **High-Energy Pop** (pop/intense, energy 0.95)
-2. **Chill Lofi** (lofi/chill, energy 0.35, acousticness 0.85)
-3. **Deep Intense Rock** (rock/intense, energy 0.90, low valence)
-4. **Adversarial — Metal + Sad**: asks for a genre/mood combination that
-   doesn't exist anywhere in the catalog (every metal song here is
-   tagged "aggressive," never "sad")
-5. **Adversarial — K-pop**: asks for a genre with zero songs in the
-   catalog at all
+- If the song's genre is an exact match to the user's favorite genre,
+  it gets 2 points. If not, 0.
+- If the song's mood is an exact match, it gets 1 point. If not, 0.
+- For the rest of the features (energy, valence, tempo, danceability,
+  acousticness), the song doesn't need to match exactly — it just needs
+  to be *close* to what the user wants. The closer it is, the more of
+  that feature's points it earns; a song that's exactly on target gets
+  full credit, and a song at the opposite extreme gets none.
+- All the points get added up into one final score.
+- Every song in the catalog gets scored this way, then we sort from
+  highest score to lowest and show the top 5.
 
-### What surprised us
+There's no learning involved — every time you run it with the same
+inputs, you get the exact same output. It's really just "compare, score,
+sort."
 
-- The system never signals "I couldn't fully satisfy this request." For
-  the contradictory Metal + Sad profile, it silently returned its best
-  available compromise (`Thunder Cathedral`, mood "aggressive," not
-  "sad") with no indication that the mood target was structurally
-  unreachable. A real product would likely want some way to flag
-  "no strong match found" rather than confidently ranking a mediocre fit.
-- Removing genre credit entirely (the K-pop profile) didn't break the
-  system, but it did make it **much less decisive** — the gap between
-  #1 and #2 shrank to 0.07 points, far tighter than any real-genre
-  profile's top two. That's a useful signal that wasn't obvious until we
-  looked for it: a shrinking score gap across the board can itself
-  indicate "no genre matched," which could be surfaced to users directly
-  ("we don't have much k-pop, but here's our closest fit") instead of
-  presented as an equally confident top 5.
+## Observed Behavior / Biases
 
-### Comparing profile pairs (plain language)
+- **Genre beats mood, almost every time.** Because an exact genre match
+  is worth 2 points — double what mood is worth — a song with the
+  "right" genre but the "wrong" mood usually still beats a song from a
+  different genre with the "right" mood. For example, a listener who
+  asks for "happy pop" still gets an "intense" pop song ranked near the
+  top, ahead of songs from other genres that actually match "happy."
+- **The catalog itself is lopsided.** `lofi` has 3 songs while every
+  other genre has 1. That means a lofi-ish listener gets 3 chances to
+  score well just because there's more lofi to choose from — not
+  because lofi is a better fit than, say, our one jazz song. A real
+  streaming catalog has the same problem, just bigger: whatever genre a
+  platform has the most of tends to get recommended more, regardless of
+  whether it's really the best match for any one listener.
+- **It never says "I'm not sure."** If you ask for a genre/mood
+  combination that doesn't exist in the catalog (like "sad metal," when
+  every metal song here is tagged "aggressive"), the system doesn't flag
+  that — it just confidently returns its best imperfect guess as if it
+  were a great match.
 
-- **High-Energy Pop vs. Chill Lofi:** these two ask for opposite things
-  on almost every dimension — high vs. low energy, upbeat vs. mellow
-  tempo, produced vs. acoustic — and their top-5 lists share zero songs.
-  That's exactly what should happen: a system that gave a chill lofi fan
-  gym-workout pop songs would clearly be broken, so the total separation
-  here is a good sign the scoring logic is doing its job.
-- **Deep Intense Rock vs. High-Energy Pop:** these overlap on mood
-  ("intense") and target energy, but differ on genre. Sure enough,
-  `Gym Hero` (pop) shows up as the #2 pick for the *rock* fan, and
-  `Storm Runner` (rock) shows up as the #3 pick for the *pop* fan — mood
-  and energy similarity let songs "leak" across a genre boundary into a
-  related list, while the exact-genre song still comfortably holds first
-  place in its own list. This makes sense: intensity is intensity,
-  regardless of genre label, so some crossover between "intense" profiles
-  is reasonable.
-- **Deep Intense Rock vs. Metal + Sad (adversarial):** both profiles
-  target high energy and an aggressive-adjacent feel, but one explicitly
-  wants low valence ("sad") and the other doesn't specify sadness at all.
-  `Thunder Cathedral` (metal/aggressive) tops the Metal + Sad list purely
-  because it's the *only* metal song, not because it's actually sad —
-  which is the clearest evidence in this evaluation that genre identity
-  currently outweighs emotional/mood coherence when the two conflict.
-- **K-pop (adversarial) vs. High-Energy Pop:** both target upbeat,
-  danceable, high-valence numbers, but K-pop has no genre match anywhere
-  in the catalog. The result: `Sunrise City` (real pop) and `Rooftop
-  Lights` (indie pop) end up almost tied for #1 in the K-pop list, while
-  `Sunrise City` wins by a wide, decisive margin in the true pop list.
-  Losing genre credit doesn't just lower every score uniformly — it
-  flattens the *differences between* songs, making the ranking much less
-  confident overall.
+## Evaluation Process
 
-### Explaining one result in plain language
+We tested the system with five different taste profiles and looked at
+the top 5 results for each (full output is in README.md):
 
-Why does `Gym Hero` keep showing up even for someone who says they want
-"Happy Pop," when `Gym Hero` is actually tagged "intense," not "happy"?
-Our recipe hands out a guaranteed 2-point bonus just for being in the
-right genre — before it even looks at mood or anything else. `Gym Hero`
-gets that full 2 points for being pop, plus solid partial credit for
-having energy and danceability in the right neighborhood; losing the
-1 mood point barely dents that lead. So a song can have the *wrong*
-mood and still outrank songs from a *different* genre, because right
-now our system trusts "this is pop" more than it trusts "this feels
-happy."
+1. **High-Energy Pop** — upbeat, intense pop
+2. **Chill Lofi** — mellow, acoustic, low-energy lofi
+3. **Deep Intense Rock** — high-energy, moodier rock
+4. **An adversarial profile**: genre = metal, mood = sad — a combination
+   that doesn't actually exist in our catalog, to see if the system
+   would notice
+5. **Another adversarial profile**: genre = k-pop — a genre with zero
+   songs in our catalog at all, to see what happens when nothing can
+   match
 
----
+We also ran one experiment: doubling the points for energy and cutting
+the points for genre in half, then comparing the before/after rankings
+for the High-Energy Pop profile. The order of the top songs barely
+changed, but the score gaps between songs got much smaller — meaning the
+system became less confident/decisive, not necessarily more "correct."
 
-## Limitations and Bias
+Comparing pairs of profiles side by side also helped confirm the system
+was behaving sensibly: totally opposite profiles (High-Energy Pop vs.
+Chill Lofi) shared zero songs in their results, which is exactly what
+should happen, while similar profiles (Deep Intense Rock vs. High-Energy
+Pop, which both want an "intense" mood) had some songs cross over between
+their lists.
 
-**A concrete bias discovered during testing:** the catalog itself is
-skewed independent of the scoring math. `lofi` accounts for 3 of the 19
-songs (~16%) — every other genre has exactly one — and `chill` is
-likewise the most common mood (3 songs). That means a profile anywhere
-near lofi/chill effectively gets three "chances" to score well, purely
-because there are more candidates in that bucket, not because lofi music
-is a genuinely better match for that listener than, say, the catalog's
-lone jazz or classical track. On a real platform, genres that happen to
-have more catalog depth (historically pop and hip-hop) would win more
-recommendation slots for the same structural reason — a form of bias baked
-into the data itself, not the algorithm.
+## Intended Use and Non-Intended Use
 
-- **Small, hand-authored catalog.** 19 songs is nowhere near representative of
-  a real streaming catalog; results won't generalize.
-- **No collaborative signal.** The system has zero awareness of what other
-  users like, so it cannot surface songs a user would love but that don't
-  match their *stated* profile (surprise, discovery of adjacent genres).
-- **Static preferences.** `user_prefs` values are fixed inputs; the system
-  never updates them based on the recommendations it just gave, so it
-  can't model how taste evolves or how a real feedback loop would behave.
-- **Categorical features are binary.** Genre/mood matching is all-or-
-  nothing; a "pop-adjacent" genre like "indie pop" gets zero credit against
-  a "pop" preference, even though a person might consider them close.
-- **Weight choices are subjective** and were set by the author's judgment,
-  not learned or validated against real user satisfaction data.
-- **Filter bubble risk**, discussed in detail in `bias_analysis.md`: without
-  the `max_per_artist` guardrail, results can be dominated by one artist
-  whose songs happen to match the profile well.
+**Intended for:**
+- Learning how a simple, rule-based recommender works under the hood.
+- Showing how weighting choices (like "genre is worth more than mood")
+  directly shape what gets recommended.
+- Practicing how to test a system for bias and unexpected behavior.
 
-## Future Improvements
-- Support fuzzy/partial categorical matching (e.g. a genre-similarity
-  matrix instead of exact match).
-- Let `user_prefs` update from simulated interactions (likes/
-  skips), to model feedback loops explicitly rather than just discussing
-  them.
-- Add a lightweight collaborative-filtering component (e.g. co-listen
-  counts between songs) to compare content-based vs. hybrid results.
-- Expand the diversity mechanism beyond per-artist caps to genre/mood
-  coverage targets.
-- Replace the synthetic CSV with a larger, more realistic dataset if this
-  moves beyond an educational exercise.
+**Not intended for:**
+- Actually recommending music to real users — the catalog is tiny and
+  made up, and the "taste profiles" aren't based on real listening
+  behavior.
+- Any use where the recommendations need to be fair across genres,
+  artists, or demographics — this system was never checked for that
+  kind of fairness, and the catalog imbalance we found means it
+  probably isn't fair as-is.
+- Situations where the system needs to admit uncertainty — right now it
+  always confidently returns a top 5, even when nothing in the catalog
+  is a good match.
 
-## Ethical Considerations
-Even a simple simulation illustrates a real risk in production systems:
-content-based scoring alone can create narrow, self-reinforcing feeds
-that reduce a listener's exposure to new artists/genres, and can advantage
-whichever artists/genres are numerically over-represented in the catalog.
-Any production system built on these ideas should pair relevance scoring
-with explicit diversity and exploration mechanisms, not treat "highest
-score" as automatically "best to show."
+## Ideas for Improvement
+
+1. **Let genre be "fuzzy" instead of all-or-nothing.** Right now "pop"
+   and "indie pop" are treated as completely unrelated, even though
+   they're clearly close. A similarity score between genres (instead of
+   exact match only) would feel more natural.
+2. **Add a confidence signal.** When no song is a strong match (like our
+   k-pop test), the system should be able to say "these aren't great
+   matches" instead of presenting a top 5 as if it were fully satisfied.
+3. **Let the profile change over time.** Right now `user_prefs` never
+   updates. A more realistic version would nudge a listener's profile
+   based on which recommended songs they said they liked, so it could
+   actually learn and adapt.
+
+## Personal Reflection
+
+The biggest learning moment was realizing that "bias" in a system like
+this doesn't have to come from a bug — it can come from a totally
+correct implementation of a design choice that just turns out to matter
+more than expected. Giving genre double the points of mood seemed like a
+small, reasonable decision, but it ended up meaning genre almost always
+wins whenever the two disagree. Nothing was "wrong" with the math; the
+math just revealed what the weights actually meant in practice.
+
+Using an AI coding assistant sped up a lot of the repetitive parts —
+writing CSV-loading boilerplate, generating extra test cases, drafting
+new catalog rows in the right format — but I had to double-check its
+math suggestions carefully, especially around the closeness formula for
+numeric features. It's easy for a plausible-looking scoring formula to
+quietly reward "bigger is better" instead of "closer is better," and
+that's exactly the kind of subtle bug that wouldn't show up until you
+specifically tested for it (like we did with the energy-closeness test).
+
+What surprised me most is how convincing a fairly simple point-counting
+system can feel. There's no learning, no neural network, nothing
+"smart" happening — it's addition and sorting — but seeing it correctly
+separate "chill lofi" fans from "intense rock" fans, and watching it
+explain its own reasoning line by line, genuinely felt like a real
+recommendation, not just a spreadsheet formula. That's a useful reminder
+that a system doesn't need to be complex to feel intelligent to the
+person using it, which cuts both ways: it's a great way to build trust
+quickly, but it's also easy to over-trust a system whose "reasoning" is
+really just a handful of hardcoded point values.
+
+If I kept extending this project, I'd want to try feeding it real
+listening data (even something small, like my own liked songs from a
+streaming export) and see how differently the recommendations would
+need to be weighted to feel right for actual, messy human taste instead
+of the neat profiles I made up for testing.
